@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>課室預約系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                        available: '#10B981',
+                        booked: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .timeline-container {
+            overflow-x: auto;
+            position: relative;
+        }
+        
+        .timeline-header {
+            display: grid;
+            grid-template-columns: 80px repeat(10, minmax(100px, 1fr));
+            position: sticky;
+            top: 0;
+            background-color: #f9fafb;
+            z-index: 10;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .dark .timeline-header {
+            background-color: #1f2937;
+            border-color: #374151;
+        }
+        
+        .timeline-grid {
+            display: grid;
+            grid-template-columns: 80px repeat(10, minmax(100px, 1fr));
+        }
+        
+        .header-cell {
+            padding: 0.75rem 0.5rem;
+            text-align: center;
+            font-weight: 600;
+            border-right: 1px solid #e5e7eb;
+        }
+        
+        .dark .header-cell {
+            border-color: #374151;
+        }
+        
+        .time-cell {
+            padding: 0.5rem;
+            text-align: right;
+            font-weight: 500;
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            position: sticky;
+            left: 0;
+            background-color: #f9fafb;
+            z-index: 5;
+        }
+        
+        .dark .time-cell {
+            background-color: #1f2937;
+            border-color: #374151;
+        }
+        
+        .booking-slot {
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 0.25rem;
+            position: relative;
+            min-height: 40px;
+        }
+        
+        .dark .booking-slot {
+            border-color: #374151;
+        }
+        
+        .booking-event {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            right: 2px;
+            height: calc(100% - 4px);
+            color: white;
+            padding: 0.25rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            z-index: 2;
+        }
+        
+        /* Custom scrollbar for Webkit browsers */
+        ::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .dark ::-webkit-scrollbar-track {
+            background: #374151;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        .dark ::-webkit-scrollbar-thumb {
+            background: #6B7280;
+        }
+        
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #9CA3AF;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div class="container mx-auto p-4 max-w-7xl">
+        <h1 class="text-3xl font-bold text-center text-primary mb-8">課室預約系統</h1>
+        
+        <!-- 房間預約狀態 (已修改為Timeline) -->
+        <div class="mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-semibold">房間預約狀態</h2>
+                <div class="flex items-center">
+                    <button id="today-btn" class="mr-2 px-3 py-1 bg-primary text-white rounded-md text-sm hover:bg-opacity-90">
+                        今天
+                    </button>
+                    <div class="relative">
+                        <input type="text" id="date-picker" class="px-3 py-1 border rounded-md text-base bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white cursor-pointer" readonly>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 overflow-hidden">
+                <div class="timeline-container">
+                    <div class="timeline-header" id="timeline-header">
+                        <!-- 動態生成時間頭部 -->
+                    </div>
+                    <div class="timeline-grid" id="timeline-grid">
+                        <!-- 動態生成房間行 -->
+                    </div>
+                </div>
+                <div class="flex justify-end gap-4 mt-4">
+                    <div class="flex items-center">
+                        <div class="w-4 h-4 rounded-full bg-available mr-2"></div>
+                        <span class="text-sm">可預約</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-4 h-4 rounded-full bg-booked mr-2"></div>
+                        <span class="text-sm">已預約</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 預約表單 -->
+        <div class="grid md:grid-cols-2 gap-8">
+            <div>
+                <h2 class="text-2xl font-semibold mb-4">預約房間</h2>
+                <form id="booking-form" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <div class="mb-4">
+                        <label for="room" class="block text-sm font-medium mb-2">房間編號 *</label>
+                        <select id="room" name="room" required
+                            class="w-full px-4 py-2 border rounded-lg text-base focus:ring-2 focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600">
+                            <option value="">請選擇房間</option>
+                            <!-- 動態生成房間選項 -->
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label for="date" class="block text-sm font-medium mb-2">日期 *</label>
+                        <input type="date" id="date" name="date" required
+                            class="w-full px-4 py-2 border rounded-lg text-base focus:ring-2 focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="start-time" class="block text-sm font-medium mb-2">開始時間 *</label>
+                            <select id="start-time" name="start-time" required
+                                class="w-full px-4 py-2 border rounded-lg text-base focus:ring-2 focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600">
+                                <option value="">請選擇</option>
+                                <!-- 動態生成時間選項 -->
+                            </select>
+                        </div>
+                        <div>
+                            <label for="end-time" class="block text-sm font-medium mb-2">結束時間 *</label>
+                            <select id="end-time" name="end-time" required
+                                class="w-full px-4 py-2 border rounded-lg text-base focus:ring-2 focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600">
+                                <option value="">請選擇</option>
+                                <!-- 動態生成時間選項 -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-6">
+                        <label for="purpose" class="block text-sm font-medium mb-2">用途 *</label>
+                        <textarea id="purpose" name="purpose" rows="3" required placeholder="請簡述預約用途"
+                            class="w-full px-4 py-2 border rounded-lg text-base focus:ring-2 focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label for="teacher" class="block text-sm font-medium mb-2">教師姓名 *</label>
+                        <input type="text" id="teacher" name="teacher" required
+                            class="w-full px-4 py-2 border rounded-lg text-base focus:ring-2 focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600">
+                    </div>
+                    <div class="mt-6">
+                        <button type="submit"
+                            class="w-full bg-primary hover:bg-opacity-90 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+                            提交預約
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- 當前預約列表 -->
+            <div>
+                <h2 class="text-2xl font-semibold mb-4">當前預約</h2>
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-h-[600px] overflow-y-auto">
+                    <div id="booking-list" class="space-y-4">
+                        <!-- 動態生成預約列表 -->
+                        <p id="no-bookings" class="text-gray-500 dark:text-gray-400 text-center py-4">目前沒有預約記錄</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 檢測深色模式
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+
+        // 初始化房間和預約數據
+        const rooms = Array.from({ length: 10 }, (_, i) => `R${String(i + 1).padStart(3, '0')}`);
+        let bookings = [];
+        
+        // 生成時間選項（從8:30到18:30，每半小時一個）
+        const timeSlots = [];
+        for (let hour = 8; hour <= 18; hour++) {
+            for (let min of [0, 30]) {
+                // 跳過18:30之後的時段
+                if (hour === 18 && min === 30) continue;
+                
+                const hourStr = hour.toString().padStart(2, '0');
+                const minStr = min.toString().padStart(2, '0');
+                timeSlots.push(`${hourStr}:${minStr}`);
+            }
+        }
+
+        // 格式化日期為 YYYY-MM-DD
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        // 格式化日期顯示
+        function formatDateDisplay(date) {
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+            const weekday = weekdays[date.getDay()];
+            return `${year}/${month}/${day} (${weekday})`;
+        }
+        
+        // 初始化日期選擇器
+        function initDatePicker() {
+            const datePickerInput = document.getElementById('date-picker');
+            const today = new Date();
+            
+            // 初始化顯示當天日期
+            datePickerInput.value = formatDateDisplay(today);
+            datePickerInput.dataset.date = formatDate(today);
+            
+            // 初始化 flatpickr
+            const datePicker = flatpickr(datePickerInput, {
+                dateFormat: "Y/m/d (D)",
+                locale: {
+                    weekdays: {
+                        shorthand: ["日", "一", "二", "三", "四", "五", "六"],
+                        longhand: ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"],
+                    },
+                    months: {
+                        shorthand: ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+                        longhand: ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"],
+                    },
+                },
+                onChange: function(selectedDates, dateStr) {
+                    const selectedDate = selectedDates[0];
+                    datePickerInput.dataset.date = formatDate(selectedDate);
+                    initTimeline();
+                }
+            });
+            
+            // 今天按鈕
+            document.getElementById('today-btn').addEventListener('click', () => {
+                datePicker.setDate(today);
+                datePickerInput.dataset.date = formatDate(today);
+                initTimeline();
+            });
+        }
+
+        // 生成隨機顏色（柔和色調）
+        function getRandomColor() {
+            // 預定義一些好看的柔和顏色
+            const colors = [
+                '#4F86C6', // 柔和藍
+                '#7EB77F', // 柔和綠
+                '#E2725B', // 柔和紅
+                '#D798B7', // 柔和粉紅
+                '#8E7CC3', // 柔和紫
+                '#FFAB4A', // 柔和橙
+                '#7CBDC9', // 藍綠色
+                '#C8A27C', // 棕色
+                '#91A8D0', // 淡藍色
+                '#B0A8B9'  // 灰紫色
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // 初始化時間線
+        function initTimeline() {
+            const selectedDate = document.getElementById('date-picker').dataset.date;
+            
+            // 初始化時間頭部
+            const timelineHeader = document.getElementById('timeline-header');
+            timelineHeader.innerHTML = '';
+            
+            // 添加空白頭部單元格（左上角）
+            const emptyHeaderCell = document.createElement('div');
+            emptyHeaderCell.className = 'header-cell';
+            timelineHeader.appendChild(emptyHeaderCell);
+            
+            // 添加房間頭部
+            rooms.forEach(room => {
+                const roomHeaderCell = document.createElement('div');
+                roomHeaderCell.className = 'header-cell';
+                roomHeaderCell.textContent = room;
+                timelineHeader.appendChild(roomHeaderCell);
+            });
+            
+            // 初始化時間行和房間格子
+            const timelineGrid = document.getElementById('timeline-grid');
+            timelineGrid.innerHTML = '';
+            
+            // 為每個時間段創建一行
+            timeSlots.forEach(timeSlot => {
+                // 時間標籤
+                const timeCell = document.createElement('div');
+                timeCell.className = 'time-cell';
+                timeCell.textContent = timeSlot;
+                timelineGrid.appendChild(timeCell);
+                
+                // 為每個房間添加單元格
+                rooms.forEach(room => {
+                    const bookingSlot = document.createElement('div');
+                    bookingSlot.className = 'booking-slot';
+                    bookingSlot.dataset.room = room;
+                    bookingSlot.dataset.date = selectedDate;
+                    bookingSlot.dataset.time = timeSlot;
+                    
+                    // 添加點擊事件來快速預約
+                    bookingSlot.addEventListener('click', () => {
+                        if (!isSlotBooked(room, selectedDate, timeSlot)) {
+                            prefillBookingForm(room, selectedDate, timeSlot);
+                        }
+                    });
+                    
+                    timelineGrid.appendChild(bookingSlot);
+                });
+            });
+            
+            // 繪製預約事件
+            renderBookingEvents();
+        }
+        
+        // 檢查時間段是否已被預約
+        function isSlotBooked(room, date, time) {
+            return bookings.some(booking => {
+                // 轉換為分鐘來比較時間
+                const bookingStart = convertTimeToMinutes(booking.startTime);
+                const bookingEnd = convertTimeToMinutes(booking.endTime);
+                const slotTime = convertTimeToMinutes(time);
+                
+                return booking.room === room && 
+                       booking.date === date && 
+                       slotTime >= bookingStart && 
+                       slotTime < bookingEnd;
+            });
+        }
+        
+        // 預填預約表單
+        function prefillBookingForm(room, date, time) {
+            document.getElementById('room').value = room;
+            document.getElementById('date').value = date;
+            document.getElementById('start-time').value = time;
+            
+            // 計算默認結束時間（開始時間 + 1小時）
+            const timeIndex = timeSlots.indexOf(time);
+            if (timeIndex !== -1 && timeIndex + 2 < timeSlots.length) {
+                document.getElementById('end-time').value = timeSlots[timeIndex + 2];
+            } else if (timeIndex !== -1 && timeIndex + 1 < timeSlots.length) {
+                document.getElementById('end-time').value = timeSlots[timeIndex + 1];
+            }
+            
+            // 滾動到表單
+            document.getElementById('booking-form').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // 渲染預約事件
+        function renderBookingEvents() {
+            const selectedDate = document.getElementById('date-picker').dataset.date;
+            
+            // 篩選當前日期的預約
+            const dayBookings = bookings.filter(booking => booking.date === selectedDate);
+            
+            // 清除現有預約事件
+            document.querySelectorAll('.booking-event').forEach(el => el.remove());
+            
+            // 創建房間顏色映射 - 同一房間的預約使用相同顏色
+            const roomColors = {};
+            
+            // 為每個房間分配顏色
+            rooms.forEach(room => {
+                roomColors[room] = getRandomColor();
+            });
+            
+            // 為每個預約創建事件顯示
+            dayBookings.forEach(booking => {
+                const room = booking.room;
+                const startTime = booking.startTime;
+                
+                // 找到起始行元素
+                const startRow = document.querySelector(
+                    `.time-cell:has(+.booking-slot[data-time="${startTime}"])`
+                );
+                
+                if (!startRow) return;
+                
+                // 找到所有與此預約時間重疊的時間格
+                for (let i = 0; i < timeSlots.length; i++) {
+                    const timeSlot = timeSlots[i];
+                    const slotTime = convertTimeToMinutes(timeSlot);
+                    const startTimeMinutes = convertTimeToMinutes(booking.startTime);
+                    const endTimeMinutes = convertTimeToMinutes(booking.endTime);
+                    
+                    // 如果時間在預約範圍內
+                    if (slotTime >= startTimeMinutes && slotTime < endTimeMinutes) {
+                        // 找到對應的單元格
+                        const cell = document.querySelector(
+                            `.booking-slot[data-room="${room}"][data-date="${booking.date}"][data-time="${timeSlot}"]`
+                        );
+                        
+                        if (!cell) continue;
+                        
+                        // 檢查是否已經有事件
+                        if (cell.querySelector('.booking-event')) continue;
+                        
+                        // 創建預約事件元素
+                        const eventEl = document.createElement('div');
+                        eventEl.className = 'booking-event';
+                        eventEl.dataset.bookingId = booking.id;
+                        
+                        // 使用房間對應的顏色
+                        eventEl.style.backgroundColor = roomColors[room];
+                        
+                        // 只在時間段的第一個格子中顯示預約信息
+                        if (timeSlot === booking.startTime) {
+                            eventEl.innerHTML = `
+                                <div class="w-full">
+                                    <div class="font-bold">${booking.purpose}</div>
+                                    <div class="text-xs">${booking.teacher}</div>
+                                </div>
+                            `;
+                        }
+                        
+                        // 添加點擊事件以顯示詳細信息
+                        eventEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            alert(`預約詳情：\n房間：${booking.room}\n日期：${booking.date}\n時間：${booking.startTime} - ${booking.endTime}\n用途：${booking.purpose}\n教師：${booking.teacher}`);
+                        });
+                        
+                        cell.appendChild(eventEl);
+                    }
+                }
+            });
+        }
+        
+        // 將時間轉換為分鐘（用於比較）
+        function convertTimeToMinutes(timeStr) {
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return hours * 60 + minutes;
+        }
+
+        // 初始化房間選擇
+        function initRoomSelect() {
+            const select = document.getElementById('room');
+            
+            // 清空現有選項（保留預設選項）
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            
+            // 添加房間選項
+            rooms.forEach(room => {
+                const option = document.createElement('option');
+                option.value = room;
+                option.textContent = room;
+                select.appendChild(option);
+            });
+        }
+        
+        // 初始化時間選擇下拉選單
+        function initTimeSelects() {
+            const startTimeSelect = document.getElementById('start-time');
+            const endTimeSelect = document.getElementById('end-time');
+            
+            // 清空現有選項（保留預設選項）
+            while (startTimeSelect.options.length > 1) startTimeSelect.remove(1);
+            while (endTimeSelect.options.length > 1) endTimeSelect.remove(1);
+            
+            // 添加時間選項（除了最後一個時段不能作為開始時間）
+            for (let i = 0; i < timeSlots.length - 1; i++) {
+                const option = document.createElement('option');
+                option.value = timeSlots[i];
+                option.textContent = timeSlots[i];
+                startTimeSelect.appendChild(option);
+            }
+            
+            // 起始時間變更時，更新結束時間選項
+            startTimeSelect.addEventListener('change', () => {
+                updateEndTimeOptions();
+            });
+            
+            // 初始化結束時間選項
+            updateEndTimeOptions();
+        }
+        
+        // 更新結束時間選項
+        function updateEndTimeOptions() {
+            const startTimeSelect = document.getElementById('start-time');
+            const endTimeSelect = document.getElementById('end-time');
+            const selectedStartTime = startTimeSelect.value;
+            
+            // 清空現有選項（保留預設選項）
+            while (endTimeSelect.options.length > 1) endTimeSelect.remove(1);
+            
+            if (!selectedStartTime) return;
+            
+            const startIndex = timeSlots.indexOf(selectedStartTime);
+            if (startIndex === -1) return;
+            
+            // 添加結束時間選項（必須在開始時間之後）
+            for (let i = startIndex + 1; i < timeSlots.length; i++) {
+                const option = document.createElement('option');
+                option.value = timeSlots[i];
+                option.textContent = timeSlots[i];
+                endTimeSelect.appendChild(option);
+            }
+        }
+
+        // 日期限制：只能選未來30天
+        function setDateInputLimits() {
+            const dateInput = document.getElementById('date');
+            const today = new Date();
+            const maxDate = new Date(today);
+            maxDate.setDate(today.getDate() + 30);
+            
+            dateInput.min = formatDate(today);
+            dateInput.max = formatDate(maxDate);
+            dateInput.value = formatDate(today);
+        }
+
+        // 添加預約
+        function addBooking(booking) {
+            // 檢查是否有衝突的預約
+            const startTime = convertTimeToMinutes(booking.startTime);
+            const endTime = convertTimeToMinutes(booking.endTime);
+            
+            const conflictBooking = bookings.find(b => {
+                const bStartTime = convertTimeToMinutes(b.startTime);
+                const bEndTime = convertTimeToMinutes(b.endTime);
+                
+                return b.room === booking.room && 
+                       b.date === booking.date && 
+                       ((startTime >= bStartTime && startTime < bEndTime) || 
+                        (endTime > bStartTime && endTime <= bEndTime) ||
+                        (startTime <= bStartTime && endTime >= bEndTime));
+            });
+            
+            if (conflictBooking) {
+                return false;
+            }
+            
+            // 添加預約
+            bookings.push({
+                ...booking,
+                id: Date.now() // 使用時間戳作為唯一ID
+            });
+            
+            // 更新UI
+            renderBookingEvents();
+            renderBookingList();
+            
+            return true;
+        }
+
+        // 刪除預約
+        function deleteBooking(id) {
+            const index = bookings.findIndex(b => b.id === id);
+            if (index !== -1) {
+                bookings.splice(index, 1);
+                renderBookingEvents();
+                renderBookingList();
+            }
+        }
+
+        // 渲染預約列表
+        function renderBookingList() {
+            const listContainer = document.getElementById('booking-list');
+            const noBookingsElement = document.getElementById('no-bookings');
+            
+            // 清空現有列表（除了"無預約"消息）
+            Array.from(listContainer.children).forEach(child => {
+                if (child.id !== 'no-bookings') {
+                    child.remove();
+                }
+            });
+            
+            // 顯示或隱藏"無預約"消息
+            if (bookings.length === 0) {
+                noBookingsElement.style.display = 'block';
+                return;
+            } else {
+                noBookingsElement.style.display = 'none';
+            }
+            
+            // 按日期排序預約
+            const sortedBookings = [...bookings].sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                return a.startTime.localeCompare(b.startTime);
+            });
+            
+            // 添加預約項目
+            sortedBookings.forEach(booking => {
+                const bookingItem = document.createElement('div');
+                bookingItem.className = 'border dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700 relative';
+                
+                // 日期格式化
+                const bookingDate = new Date(booking.date);
+                const formattedDate = `${bookingDate.getFullYear()}年${bookingDate.getMonth() + 1}月${bookingDate.getDate()}日`;
+                
+                bookingItem.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <h3 class="font-medium text-lg">${booking.room}</h3>
+                        <button class="delete-booking text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400" data-id="${booking.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                        <div><span class="font-medium">日期：</span>${formattedDate}</div>
+                        <div><span class="font-medium">時段：</span>${booking.startTime} - ${booking.endTime}</div>
+                        <div><span class="font-medium">教師：</span>${booking.teacher}</div>
+                        <div><span class="font-medium">用途：</span>${booking.purpose}</div>
+                    </div>
+                `;
+                
+                listContainer.appendChild(bookingItem);
+                
+                // 添加刪除事件
+                const deleteBtn = bookingItem.querySelector('.delete-booking');
+                deleteBtn.addEventListener('click', () => {
+                    deleteBooking(booking.id);
+                });
+            });
+        }
+
+        // 處理預約表單提交
+        function handleBookingSubmit(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            const booking = {
+                room: formData.get('room'),
+                date: formData.get('date'),
+                startTime: formData.get('start-time'),
+                endTime: formData.get('end-time'),
+                purpose: formData.get('purpose'),
+                teacher: formData.get('teacher')
+            };
+            
+            // 驗證表單
+            if (!booking.room || !booking.date || !booking.startTime || !booking.endTime || !booking.purpose || !booking.teacher) {
+                alert('請填寫所有必填欄位');
+                return;
+            }
+            
+            // 驗證時間邏輯
+            if (booking.startTime >= booking.endTime) {
+                alert('結束時間必須晚於開始時間');
+                return;
+            }
+            
+            // 添加預約
+            const success = addBooking(booking);
+            
+            if (success) {
+                // 清空表單
+                document.getElementById('booking-form').reset();
+                setDateInputLimits();
+            } else {
+                alert('所選時段已被預約，請選擇其他時段');
+            }
+        }
+
+        // 添加一些示範預約
+        function addDemoBookings() {
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            
+            const demoBookings = [
+                {
+                    room: 'R001',
+                    date: formatDate(today),
+                    startTime: '09:00',
+                    endTime: '10:30',
+                    purpose: '教師會議',
+                    teacher: '張老師'
+                },
+                {
+                    room: 'R002',
+                    date: formatDate(today),
+                    startTime: '14:00',
+                    endTime: '15:30',
+                    purpose: '補習班',
+                    teacher: '李老師'
+                },
+                {
+                    room: 'R003',
+                    date: formatDate(tomorrow),
+                    startTime: '10:00',
+                    endTime: '11:30',
+                    purpose: '家長日準備',
+                    teacher: '王老師'
+                },
+                {
+                    room: 'R004',
+                    date: formatDate(today),
+                    startTime: '08:30',
+                    endTime: '12:00',
+                    purpose: '數學競賽訓練',
+                    teacher: '陳老師'
+                },
+                {
+                    room: 'R005',
+                    date: formatDate(today),
+                    startTime: '13:00',
+                    endTime: '14:30',
+                    purpose: '科學研討會',
+                    teacher: '林老師'
+                }
+            ];
+            
+            demoBookings.forEach(booking => addBooking(booking));
+        }
+
+        // 初始化應用
+        function initApp() {
+            initDatePicker();
+            initTimeline();
+            initRoomSelect();
+            initTimeSelects();
+            setDateInputLimits();
+            renderBookingList();
+            addDemoBookings();
+            
+            // 添加表單提交事件監聽
+            document.getElementById('booking-form').addEventListener('submit', handleBookingSubmit);
+        }
+
+        // 啟動應用
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
